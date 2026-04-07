@@ -1,0 +1,173 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Stores user preferences and context for the AI assistant.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Unique user ID from Firebase Auth." },
+        "displayName": { "type": "string", "description": "User's display name." },
+        "email": { "type": "string", "description": "User's email address." },
+        "career": { "type": "string", "description": "User's professional background." },
+        "goals": { "type": "string", "description": "User's current goals." },
+        "interests": { "type": "string", "description": "User's interests." },
+        "voiceEnabled": { "type": "boolean", "description": "Whether voice mode is enabled." },
+        "preferredVoice": { "type": "string", "enum": ["Puck", "Charon", "Kore", "Fenrir", "Zephyr"], "description": "Preferred assistant voice." },
+        "preferences": { "type": "object", "description": "User-specific settings." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the profile was created." }
+      },
+      "required": ["uid", "email"]
+    },
+    "ChatSession": {
+      "title": "Chat Session",
+      "description": "A conversation session containing multiple messages and participants.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "description": "The user who created the session." },
+        "participants": { "type": "array", "items": { "type": "string" }, "description": "List of user UIDs who can access this session." },
+        "title": { "type": "string", "description": "The title of the session." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the session was created." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "When the last message was sent." }
+      },
+      "required": ["ownerId", "participants", "title", "createdAt", "updatedAt"]
+    },
+    "Presence": {
+      "title": "Presence",
+      "description": "User presence status in a session.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "displayName": { "type": "string" },
+        "status": { "type": "string", "enum": ["online", "offline"] },
+        "lastSeen": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "displayName", "status", "lastSeen"]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "A single message in a chat session.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "The user who sent the message." },
+        "role": { "type": "string", "enum": ["user", "assistant"], "description": "The sender's role." },
+        "content": { "type": "string", "description": "The text content of the message." },
+        "explanation": { "type": "string", "description": "Explainability module output." },
+        "ethicalCheck": { "type": "string", "description": "Ethical filter results." },
+        "confidence": { "type": "number", "description": "Confidence score (0-1)." },
+        "confidenceLevel": { "type": "string", "description": "Confidence level (High/Medium/Low)." },
+        "emotion": { "type": "string", "description": "Detected user emotion." },
+        "biasCheck": { "type": "string", "description": "Bias detection results." },
+        "contextUsed": { "type": "string", "description": "Description of context used." },
+        "timestamp": { "type": "string", "format": "date-time", "description": "When the message was sent." }
+      },
+      "required": ["uid", "role", "content", "timestamp"]
+    },
+    "Quiz": {
+      "title": "Quiz",
+      "description": "A student assessment quiz.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "subject": { "type": "string" },
+        "questions": { "type": "array", "items": { "type": "object" } },
+        "score": { "type": "number" },
+        "maxScore": { "type": "number" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      }
+    },
+    "Performance": {
+      "title": "Performance",
+      "description": "Student performance metrics.",
+      "type": "object",
+      "properties": {
+        "subject": { "type": "string" },
+        "grade": { "type": "number" },
+        "progress": { "type": "number" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      }
+    },
+    "Wellbeing": {
+      "title": "Wellbeing",
+      "description": "Student wellbeing and emotion logs.",
+      "type": "object",
+      "properties": {
+        "emotion": { "type": "string" },
+        "stressLevel": { "type": "number" },
+        "notes": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      }
+    },
+    "Gamification": {
+      "title": "Gamification",
+      "description": "Points, badges, and streaks.",
+      "type": "object",
+      "properties": {
+        "points": { "type": "number" },
+        "level": { "type": "number" },
+        "streak": { "type": "number" },
+        "badges": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "StudyPlan": {
+      "title": "StudyPlan",
+      "description": "AI-generated study schedule.",
+      "type": "object",
+      "properties": {
+        "tasks": { "type": "array", "items": { "type": "object" } },
+        "timestamp": { "type": "string", "format": "date-time" }
+      }
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profiles collection."
+    },
+    "/users/{userId}/gamification/stats": {
+      "schema": "Gamification",
+      "description": "User gamification stats."
+    },
+    "/users/{userId}/quizzes/{quizId}": {
+      "schema": "Quiz",
+      "description": "User quizzes."
+    },
+    "/users/{userId}/performance/{perfId}": {
+      "schema": "Performance",
+      "description": "User performance data."
+    },
+    "/users/{userId}/wellbeing/{wellId}": {
+      "schema": "Wellbeing",
+      "description": "User wellbeing logs."
+    },
+    "/users/{userId}/studyPlans/{planId}": {
+      "schema": "StudyPlan",
+      "description": "User study plans."
+    },
+    "/users_public/{userId}": {
+      "schema": {
+        "title": "Public Profile",
+        "description": "Non-sensitive user data for search and collaboration.",
+        "type": "object",
+        "properties": {
+          "uid": { "type": "string" },
+          "displayName": { "type": "string" },
+          "email": { "type": "string" }
+        },
+        "required": ["uid", "email"]
+      },
+      "description": "Publicly searchable user profiles."
+    },
+    "/sessions/{sessionId}": {
+      "schema": "ChatSession",
+      "description": "Top-level chat sessions for collaboration."
+    },
+    "/sessions/{sessionId}/messages/{messageId}": {
+      "schema": "ChatMessage",
+      "description": "Messages within a collaborative session."
+    },
+    "/sessions/{sessionId}/presence/{userId}": {
+      "schema": "Presence",
+      "description": "Real-time presence indicators."
+    }
+  }
+}

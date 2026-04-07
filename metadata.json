@@ -1,0 +1,5 @@
+{
+  "name": "EthicMind: The Transparent AI",
+  "description": "A hackathon-winning Ethical, Explainable, and Context-Aware Intelligent Assistant built for trust and transparency.",
+  "requestFramePermissions": ["microphone", "camera", "geolocation"]
+}
