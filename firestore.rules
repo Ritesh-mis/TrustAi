@@ -128,7 +128,7 @@ service cloud.firestore {
              (!('interests' in data) || (data.interests is string && data.interests.size() < 500)) &&
              (!('voiceEnabled' in data) || data.voiceEnabled is bool) &&
              (!('preferredVoice' in data) || data.preferredVoice in ['Puck', 'Charon', 'Kore', 'Fenrir', 'Zephyr']) &&
-             (!('role' in data) || data.role in ['admin', 'user']);
+             (!('role' in data) || data.role in ['admin', 'user', 'student', 'teacher']);
     }
 
     function isUserProfileUnchanged() {

@@ -786,8 +786,9 @@ interface FirestoreErrorInfo {
 }
 
 function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const message = error instanceof Error ? error.message : String(error);
   const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
+    error: message,
     authInfo: {
       userId: auth.currentUser?.uid,
       email: auth.currentUser?.email,
@@ -805,12 +806,15 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
     path
   }
   console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
+  // Don't throw, just log and return message
+  return message;
 }
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isSigningIn, setIsSigningIn] = useState(false);
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -858,7 +862,16 @@ export default function App() {
     }
     const unsubscribe = onSnapshot(doc(db, 'users', user.uid), (snapshot) => {
       if (snapshot.exists()) {
-        setUserProfile({ uid: user.uid, ...snapshot.data() } as UserProfile);
+        const data = snapshot.data() as UserProfile;
+        setUserProfile({ uid: user.uid, ...data } as UserProfile);
+        // Ensure public profile is in sync
+        setDoc(doc(db, 'users_public', user.uid), {
+          uid: user.uid,
+          displayName: data.displayName || user.displayName || 'User',
+          email: data.email || user.email || ''
+        }, { merge: true }).catch(err => {
+          handleFirestoreError(err, OperationType.WRITE, `users_public/${user.uid}`);
+        });
       } else {
         // Initialize profile if it doesn't exist
         const initialProfile = {
@@ -870,13 +883,14 @@ export default function App() {
           goals: '',
           interests: ''
         };
-        setDoc(doc(db, 'users', user.uid), initialProfile);
-        // Sync to public profile
-        setDoc(doc(db, 'users_public', user.uid), {
-          uid: user.uid,
-          displayName: initialProfile.displayName,
-          email: initialProfile.email
+        setDoc(doc(db, 'users', user.uid), initialProfile).catch(err => {
+          handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}`);
         });
+      }
+    }, (err) => {
+      const msg = handleFirestoreError(err, OperationType.GET, `users/${user.uid}`);
+      if (msg.includes('permission-denied')) {
+        setError("Access denied to your profile. Please contact support.");
       }
     });
     return unsubscribe;
@@ -890,8 +904,12 @@ export default function App() {
         setGamification(snapshot.data() as GamificationStats);
       } else {
         const initialStats = { points: 100, level: 1, streak: 1, badges: ['Newcomer'] };
-        setDoc(doc(db, 'users', user.uid, 'gamification', 'stats'), initialStats);
+        setDoc(doc(db, 'users', user.uid, 'gamification', 'stats'), initialStats).catch(err => {
+          handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}/gamification/stats`);
+        });
       }
+    }, (err) => {
+      handleFirestoreError(err, OperationType.GET, `users/${user.uid}/gamification/stats`);
     });
     return unsubscribe;
   }, [user]);
@@ -902,6 +920,8 @@ export default function App() {
     const q = query(collection(db, 'users', user.uid, 'performance'), orderBy('timestamp', 'desc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       setPerformance(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as PerformanceMetric)));
+    }, (err) => {
+      handleFirestoreError(err, OperationType.LIST, `users/${user.uid}/performance`);
     });
     return unsubscribe;
   }, [user]);
@@ -912,6 +932,8 @@ export default function App() {
     const q = query(collection(db, 'users', user.uid, 'wellbeing'), orderBy('timestamp', 'desc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       setWellbeing(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as WellbeingLog)));
+    }, (err) => {
+      handleFirestoreError(err, OperationType.LIST, `users/${user.uid}/wellbeing`);
     });
     return unsubscribe;
   }, [user]);
@@ -924,6 +946,8 @@ export default function App() {
       if (!snapshot.empty) {
         setStudyPlan({ id: snapshot.docs[0].id, ...snapshot.docs[0].data() } as StudyPlan);
       }
+    }, (err) => {
+      handleFirestoreError(err, OperationType.LIST, `users/${user.uid}/studyPlans`);
     });
     return unsubscribe;
   }, [user]);
@@ -1009,7 +1033,9 @@ export default function App() {
           status: 'online',
           lastSeen: serverTimestamp()
         });
-      } catch (e) {}
+      } catch (e) {
+        handleFirestoreError(e, OperationType.WRITE, `sessions/${currentSessionId}/presence/${user.uid}`);
+      }
     };
 
     const setOffline = async () => {
@@ -1018,7 +1044,9 @@ export default function App() {
           status: 'offline',
           lastSeen: serverTimestamp()
         }, { merge: true });
-      } catch (e) {}
+      } catch (e) {
+        handleFirestoreError(e, OperationType.WRITE, `sessions/${currentSessionId}/presence/${user.uid}`);
+      }
     };
 
     setOnline();
@@ -1443,6 +1471,43 @@ export default function App() {
     }
   };
 
+  const handleSignIn = async () => {
+    if (isSigningIn) return;
+    try {
+      setIsSigningIn(true);
+      setError(null);
+      await signIn();
+    } catch (err: any) {
+      console.error("Sign in error:", err);
+      
+      // Handle specific Firebase Auth errors
+      switch (err.code) {
+        case 'auth/popup-blocked':
+          setError("Sign-in popup was blocked. Please allow popups for this site and try again.");
+          break;
+        case 'auth/popup-closed-by-user':
+          setError("Sign-in popup was closed before completion. Please try again.");
+          break;
+        case 'auth/cancelled-popup-request':
+          setError("A previous sign-in request was cancelled. Please wait a moment and try again.");
+          break;
+        case 'auth/internal-error':
+        case 'auth/network-request-failed':
+          setError("A network or internal error occurred. Please check your connection and refresh.");
+          break;
+        default:
+          if (err.message?.includes('INTERNAL ASSERTION FAILED')) {
+            setError("The authentication service encountered a temporary issue. Please refresh the page.");
+          } else {
+            setError(err.message || "An unexpected error occurred during sign-in.");
+          }
+      }
+    } finally {
+      // Add a small delay before allowing another click to prevent race conditions
+      setTimeout(() => setIsSigningIn(false), 1000);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center">
@@ -1465,14 +1530,57 @@ export default function App() {
           <h1 className="text-3xl font-bold text-white mb-3 tracking-tight">TrustAI Assistant</h1>
           <p className="text-slate-400 mb-8 leading-relaxed">
             Experience ethical, explainable, and transparent AI conversations.
+            <span className="block mt-2 text-xs text-slate-500 italic">
+              Note: Please ensure popups are allowed for this site to sign in.
+            </span>
           </p>
           <button 
-            onClick={signIn}
-            className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-4 rounded-2xl transition-all flex items-center justify-center gap-3 shadow-lg shadow-indigo-500/20"
+            onClick={handleSignIn}
+            disabled={isSigningIn}
+            className={cn(
+              "w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-4 rounded-2xl transition-all flex items-center justify-center gap-3 shadow-lg shadow-indigo-500/20",
+              isSigningIn && "opacity-50 cursor-not-allowed"
+            )}
           >
-            <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-5 h-5 bg-white rounded-full p-0.5" alt="Google" />
-            Continue with Google
+            {isSigningIn ? (
+              <Loader2 className="w-5 h-5 animate-spin" />
+            ) : (
+              <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-5 h-5 bg-white rounded-full p-0.5" alt="Google" />
+            )}
+            {isSigningIn ? "Signing in..." : "Continue with Google"}
           </button>
+          
+          {error && (
+            <div className="mt-4 space-y-3">
+              <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-400 text-xs text-left">
+                <p className="font-semibold mb-1">Sign-in Issue:</p>
+                <p>{error}</p>
+                {error.includes('blocked') && (
+                  <p className="mt-2 text-rose-300/80">
+                    Check your browser's address bar for a "popup blocked" icon and allow it.
+                  </p>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <button 
+                  onClick={() => window.location.reload()}
+                  className="flex-1 py-2 text-xs font-medium bg-slate-800 hover:bg-slate-700 text-white rounded-lg transition-colors"
+                >
+                  Refresh Page
+                </button>
+                <button 
+                  onClick={async () => {
+                    await logOut();
+                    setError(null);
+                    setIsSigningIn(false);
+                  }}
+                  className="flex-1 py-2 text-xs font-medium border border-slate-700 hover:border-slate-600 text-slate-400 hover:text-white rounded-lg transition-colors"
+                >
+                  Reset Auth
+                </button>
+              </div>
+            </div>
+          )}
         </motion.div>
       </div>
     );
